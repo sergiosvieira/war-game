@@ -157,25 +157,18 @@ struct AnimationRenderer: Renderer {
 };
 
 
-struct Sprite2D {
-    Texture2D &texture;
-    Sprite2D(Texture2D& texture):
-        texture(texture) {
-    }
-    float getWidth() const {
-        return static_cast<float>(this->texture.width);
-    }
-    float getHeight() const {
-        return static_cast<float>(this->texture.height);
-    }
-    Rectangle getRectangle() const {
-        return {0.0, 0.0, getWidth(), getHeight()};
+struct TextureUtils {
+    static Rectangle getRectangle(Texture2D& texture) {
+        float width = static_cast<float>(texture.width);
+        float height = static_cast<float>(texture.height);
+        return {0.0, 0.0, width, height};
     }
 };
 
-struct AnimatedSprite2D: Sprite2D {
+struct AnimatedSprite2D {
+    Texture2D& texture;
     shared_ptr<Frame> frame = nullptr;
-    AnimatedSprite2D(Texture2D& texture) : Sprite2D(texture) {}
+    AnimatedSprite2D(Texture2D& texture) : texture(texture) {}
 };
 
 template <typename R>
@@ -205,12 +198,21 @@ struct Player : Node<AnimationRenderer> {
         position.x = running->frame->width;
         position.y = Utils::center(Constants::windowY * 1.5, running->frame->height);
     }
+    void limitMovement() {
+        static const int upLimit = 350;
+        static const int downLimit = Constants::windowY
+                - running->frame->height * renderer.scale;
+        if (position.y < upLimit) position.y = upLimit;
+        else if (position.y > downLimit)
+            position.y = downLimit;
+    }
     void move() {
         if (IsKeyDown(KEY_UP)) {
             position = {position.x + velocity.x, position.y - velocity.y};
         } else if (IsKeyDown(KEY_DOWN)) {
             position = {position.x + velocity.x, position.y + velocity.y};
         }
+        limitMovement();
     }
     void update() override {
         running->frame->next();
@@ -254,26 +256,40 @@ struct Background: Node<Renderer> {
 
 struct Game {
     Game(Resources& resources) {
-        initPlayer(resources);
+        init(resources);
     }
-    void initPlayer(Resources& resources);
+    void init(Resources& resources);
     void playThemeMusic(const Resources& resources);
     void mainTitle(const Resources& resources,
                           Color startColor);
     void update();
     void render();
     unique_ptr<Player> player = nullptr;
+    unique_ptr<Background> background = nullptr;
 };
 
-void Game::initPlayer(Resources& resources) {
+void Game::init(Resources& resources) {
     player = make_unique<Player>(resources);
+    Parallax parallax = {
+        {resources.textures["layer1"], {0, 0}, {-0.24, 0}},
+        {resources.textures["layer2"], {0, 27}, {-0.5, 0}},
+        {resources.textures["layer3"], {0, 146}, {-1.0, 0}},
+        {resources.textures["layer4"], {0, 417}, {-1.5, 0}}
+    };
+    background = make_unique<Background>(
+        resources.textures["background"],
+        parallax
+    );
+
 }
 
 void Game::update() {
+    background->update();
     player->update();
 }
 
 void Game::render() {
+    background->render();
     player->render();
 }
 
@@ -301,20 +317,10 @@ int main() {
     GameState currentState = GameState::MainTitle;
     float start = GetTime();
     int counter = 0;
-
-    Background background(resources->textures["background"], {
-        {resources->textures["layer1"], {0, 0}, {-0.24, 0}},
-        {resources->textures["layer2"], {0, 27}, {-0.5, 0}},
-        {resources->textures["layer3"], {0, 146}, {-1.0, 0}},
-        {resources->textures["layer4"], {0, 417}, {-1.5, 0}}
-    });
-
     while (!WindowShouldClose()) {
         game.update();
-        background.update();
         BeginDrawing();
         ClearBackground(BLACK);
-        background.render();
         if (currentState == GameState::MainTitle) {
             bool changeColor = Utils::timer(GetTime(), start, Constants::blinkIterval);
             if (changeColor) ++counter;
